@@ -1,0 +1,15 @@
+server:
+  listen: ":8080"
+  staticDir: "" # Optional compiled UI directory, served from the same origin.
+mediamtx:
+  url: "http://127.0.0.1:9997"
+  timeout: 5s
+metrics:
+  url: "http://127.0.0.1:9998/metrics"
+  interval: 5s
+database:
+  path: "./data/app.db"
+auth:
+  secureCookie: true # Set false ONLY for local HTTP development.
+  sessionTTL: 24h
+  origin: "" # Behind TLS proxy: https://panel.example.com (no trailing slash).

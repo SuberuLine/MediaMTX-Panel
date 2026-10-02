@@ -1,0 +1,42 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Download and verify real MediaMTX fixture
+        run: |
+          mkdir -p .cache/mediamtx
+          cd .cache/mediamtx
+          curl -fsSLO https://github.com/bluenviron/mediamtx/releases/download/v1.21.1/checksums.sha256
+          curl -fsSLO https://github.com/bluenviron/mediamtx/releases/download/v1.21.1/mediamtx_v1.21.1_linux_amd64.tar.gz
+          grep 'mediamtx_v1.21.1_linux_amd64.tar.gz$' checksums.sha256 | sha256sum -c -
+          tar -xzf mediamtx_v1.21.1_linux_amd64.tar.gz
+      - run: go test -race ./...
+        env:
+          MTX_TEST_BINARY: ${{ github.workspace }}/.cache/mediamtx/mediamtx
+      - run: go vet ./...
+      - run: test -z "$(gofmt -l cmd internal migrations docs)"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install openapi-spec-validator==0.9.0
+      - run: python -m openapi_spec_validator docs/openapi.yaml
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          tags: mediamtx-control:ci

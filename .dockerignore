@@ -1,0 +1,9 @@
+.git
+.cache
+data
+dist
+.env
+config.yaml
+*.db*
+*.exe
+coverage.out

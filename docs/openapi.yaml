@@ -1,0 +1,1050 @@
+openapi: "3.0.3"
+info:
+  title: "MediaMTX Control Panel API"
+  version: "0.1.0"
+  description: "Independent control-plane API targeting MediaMTX v1.21.1 Control API v3. Web UIs only call this backend. Login creates an HttpOnly, Secure by default, SameSite=Strict cookie. Use the returned csrfToken as X-CSRF-Token on authenticated mutations. Pagination is one-based. Encode nested names (live/camera -> live%2Fcamera). Only allowlisted path settings are writable. Global configuration, recording and HTTP user management are Phase 2."
+servers:
+  -
+    url: "/"
+security:
+  -
+    sessionCookie: []
+paths:
+  "/healthz":
+    get:
+      operationId: "health"
+      tags:
+        - "Health"
+      summary: "Backend process liveness"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Health"
+        default:
+          "$ref": "#/components/responses/Error"
+      security: []
+  "/readyz":
+    get:
+      operationId: "ready"
+      tags:
+        - "Health"
+      summary: "SQLite and MediaMTX connectivity"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Health"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "503 NOT_READY if the database or upstream is unavailable."
+      security: []
+  "/openapi.yaml":
+    get:
+      operationId: "openapi"
+      tags:
+        - "Health"
+      summary: "Embedded API contract"
+      security: []
+      responses:
+        "200":
+          description: "OpenAPI document"
+          content:
+            "application/yaml":
+              schema:
+                type: "string"
+  "/api/v1/auth/login":
+    post:
+      operationId: "login"
+      tags:
+        - "Auth"
+      summary: "Authenticate and rotate the session"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Auth"
+          headers:
+            Set-Cookie:
+              description: "HttpOnly session cookie"
+              schema:
+                type: "string"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "10 attempts per minute per peer IP, 4 concurrent password checks. Browser cross-origin login is rejected. Retain Set-Cookie and the CSRF token."
+      security: []
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/Login"
+  "/api/v1/auth/logout":
+    post:
+      operationId: "logout"
+      tags:
+        - "Auth"
+      summary: "Revoke this session and expire the cookie"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                type: "object"
+                properties:
+                  data:
+                    type: "object"
+                    properties:
+                      loggedOut:
+                        type: "boolean"
+                    required:
+                      - "loggedOut"
+                required:
+                  - "data"
+        default:
+          "$ref": "#/components/responses/Error"
+      parameters:
+        -
+          "$ref": "#/components/parameters/CSRF"
+  "/api/v1/auth/me":
+    get:
+      operationId: "currentUser"
+      tags:
+        - "Auth"
+      summary: "Current user, permissions, CSRF token and absolute expiry"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Auth"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/api/v1/instance":
+    get:
+      operationId: "getInstance"
+      tags:
+        - "Instance"
+      summary: "Instance availability, version and uptime"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                type: "object"
+                properties:
+                  data:
+                    "$ref": "#/components/schemas/Instance"
+                required:
+                  - "data"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires instance.read. Unreachable upstream returns HTTP 200, online=false, empty version and uptime=0."
+  "/api/v1/dashboard":
+    get:
+      operationId: "getDashboard"
+      tags:
+        - "Instance"
+      summary: "Aggregate instance, streams, connections and traffic"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                type: "object"
+                properties:
+                  data:
+                    "$ref": "#/components/schemas/Dashboard"
+                required:
+                  - "data"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires dashboard.read. Required upstream failures produce 502. Disabled protocol endpoints are listed explicitly; metrics failures remain visible through stale=true."
+  "/api/v1/streams":
+    get:
+      operationId: "listStreams"
+      tags:
+        - "Streams"
+      summary: "Configured and runtime streams, including offline paths"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                type: "object"
+                properties:
+                  data:
+                    type: "array"
+                    items:
+                      "$ref": "#/components/schemas/Stream"
+                  pagination:
+                    "$ref": "#/components/schemas/Pagination"
+                required:
+                  - "data"
+                  - "pagination"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires stream.read. Sorted by name. Regex and all_others configuration entries are included as offline entries unless their exact name is active."
+      parameters:
+        -
+          "$ref": "#/components/parameters/Page"
+        -
+          "$ref": "#/components/parameters/PageSize"
+    post:
+      operationId: "createStream"
+      tags:
+        - "Streams"
+      summary: "Add a path configuration"
+      responses:
+        "201":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Mutation"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires stream.create. A name-only request defaults to publisher source. Audit action: stream.create."
+      parameters:
+        -
+          "$ref": "#/components/parameters/CSRF"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/CreatePath"
+  "/api/v1/streams/{name}":
+    get:
+      operationId: "getStream"
+      tags:
+        - "Streams"
+      summary: "Read a runtime or offline configured stream"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                type: "object"
+                properties:
+                  data:
+                    "$ref": "#/components/schemas/Stream"
+                required:
+                  - "data"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires stream.read. "
+      parameters:
+        -
+          "$ref": "#/components/parameters/Name"
+    patch:
+      operationId: "updateStream"
+      tags:
+        - "Streams"
+      summary: "Patch allowlisted path settings"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Mutation"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires stream.update. Omitted fields retain values. Unknown and null fields are rejected. Audit action: stream.update."
+      parameters:
+        -
+          "$ref": "#/components/parameters/CSRF"
+        -
+          "$ref": "#/components/parameters/Name"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/PathPatch"
+    delete:
+      operationId: "deleteStream"
+      tags:
+        - "Streams"
+      summary: "Remove a path configuration"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Mutation"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires stream.delete. Can disconnect active publishers/readers. Audit action: stream.delete."
+      parameters:
+        -
+          "$ref": "#/components/parameters/CSRF"
+        -
+          "$ref": "#/components/parameters/Name"
+  "/api/v1/config/paths":
+    post:
+      operationId: "createPathConfig"
+      tags:
+        - "Configuration"
+      summary: "Add a path configuration"
+      responses:
+        "201":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Mutation"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires config.update. A name-only request defaults to publisher source. Audit action: stream.create."
+      parameters:
+        -
+          "$ref": "#/components/parameters/CSRF"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/CreatePath"
+    get:
+      operationId: "listPathConfigs"
+      tags:
+        - "Configuration"
+      summary: "Read allowlisted path settings"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                type: "object"
+                properties:
+                  data:
+                    type: "array"
+                    items:
+                      "$ref": "#/components/schemas/PathConfig"
+                  pagination:
+                    "$ref": "#/components/schemas/Pagination"
+                required:
+                  - "data"
+                  - "pagination"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires config.read. Source credentials/query strings are redacted. Send source only when replacing it."
+      parameters:
+        -
+          "$ref": "#/components/parameters/Page"
+        -
+          "$ref": "#/components/parameters/PageSize"
+  "/api/v1/config/paths/{name}":
+    patch:
+      operationId: "updatePathConfig"
+      tags:
+        - "Configuration"
+      summary: "Patch allowlisted path settings"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Mutation"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires config.update. Omitted fields retain values. Unknown and null fields are rejected. Audit action: stream.update."
+      parameters:
+        -
+          "$ref": "#/components/parameters/CSRF"
+        -
+          "$ref": "#/components/parameters/Name"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/PathPatch"
+    delete:
+      operationId: "deletePathConfig"
+      tags:
+        - "Configuration"
+      summary: "Remove a path configuration"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Mutation"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires config.update. Can disconnect active publishers/readers. Audit action: stream.delete."
+      parameters:
+        -
+          "$ref": "#/components/parameters/CSRF"
+        -
+          "$ref": "#/components/parameters/Name"
+    get:
+      operationId: "getPathConfig"
+      tags:
+        - "Configuration"
+      summary: "Read a single path configuration"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                type: "object"
+                properties:
+                  data:
+                    "$ref": "#/components/schemas/PathConfig"
+                required:
+                  - "data"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires config.read. "
+      parameters:
+        -
+          "$ref": "#/components/parameters/Name"
+  "/api/v1/connections":
+    get:
+      operationId: "listConnections"
+      tags:
+        - "Connections"
+      summary: "Unified protocol connections and sessions"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                type: "object"
+                properties:
+                  data:
+                    type: "array"
+                    items:
+                      "$ref": "#/components/schemas/Connection"
+                  pagination:
+                    "$ref": "#/components/schemas/Pagination"
+                  meta:
+                    type: "object"
+                    properties:
+                      unavailableProtocols:
+                        type: "array"
+                        items:
+                          "$ref": "#/components/schemas/Protocol"
+                    required:
+                      - "unavailableProtocols"
+                required:
+                  - "data"
+                  - "pagination"
+                  - "meta"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires connection.read. RTSP uses sessions, HLS uses sessions (not muxers). Disabled or missing protocol endpoints appear in meta.unavailableProtocols. Other upstream failures produce 502."
+      parameters:
+        -
+          "$ref": "#/components/parameters/Page"
+        -
+          "$ref": "#/components/parameters/PageSize"
+        -
+          name: "protocol"
+          in: "query"
+          schema:
+            "$ref": "#/components/schemas/Protocol"
+        -
+          name: "path"
+          in: "query"
+          description: "Exact stream name"
+          schema:
+            type: "string"
+  "/api/v1/connections/{protocol}/{id}":
+    delete:
+      operationId: "kickConnection"
+      tags:
+        - "Connections"
+      summary: "Kick a protocol session or connection"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Mutation"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires connection.kick. "
+      parameters:
+        -
+          name: "protocol"
+          in: "path"
+          required: true
+          schema:
+            "$ref": "#/components/schemas/Protocol"
+        -
+          name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          "$ref": "#/components/parameters/CSRF"
+  "/api/v1/metrics":
+    get:
+      operationId: "getMetrics"
+      tags:
+        - "Metrics"
+      summary: "Latest sampled traffic statistics"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                type: "object"
+                properties:
+                  data:
+                    "$ref": "#/components/schemas/Metrics"
+                required:
+                  - "data"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires metrics.read. In-memory observed totals reset on backend restart. Path payload bytes are not physical network traffic. Sampling failures mark stale and zero rates; recovery starts a new baseline, with no estimate for missing intervals."
+  "/api/v1/audit-logs":
+    get:
+      operationId: "listAuditLogs"
+      tags:
+        - "Audit"
+      summary: "Audit log, newest first"
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                type: "object"
+                properties:
+                  data:
+                    type: "array"
+                    items:
+                      "$ref": "#/components/schemas/Audit"
+                  pagination:
+                    "$ref": "#/components/schemas/Pagination"
+                required:
+                  - "data"
+                  - "pagination"
+        default:
+          "$ref": "#/components/responses/Error"
+      description: "Requires audit.read. Passwords, session IDs and configuration bodies are not logged."
+      parameters:
+        -
+          "$ref": "#/components/parameters/Page"
+        -
+          "$ref": "#/components/parameters/PageSize"
+components:
+  securitySchemes:
+    sessionCookie:
+      type: "apiKey"
+      in: "cookie"
+      name: "mtxui_session"
+  parameters:
+    Page:
+      name: "page"
+      in: "query"
+      schema:
+        type: "integer"
+        minimum: 1
+        maximum: 1000000
+        default: 1
+    PageSize:
+      name: "pageSize"
+      in: "query"
+      schema:
+        type: "integer"
+        minimum: 1
+        maximum: 200
+        default: 50
+    Name:
+      name: "name"
+      in: "path"
+      required: true
+      description: "Exact path/config name; URL-encode slashes. Regex names prefixed with ~ are supported. No traversal segments, control characters, backslash, percent, query or fragment delimiters."
+      schema:
+        type: "string"
+        minLength: 1
+        maxLength: 256
+    CSRF:
+      name: "X-CSRF-Token"
+      in: "header"
+      required: true
+      description: "csrfToken from login or auth/me"
+      schema:
+        type: "string"
+        minLength: 43
+        maxLength: 43
+  responses:
+    Error:
+      description: "Stable error envelope. 400 VALIDATION_ERROR; 401 UNAUTHENTICATED/INVALID_CREDENTIALS; 403 FORBIDDEN/CSRF_INVALID/ORIGIN_REJECTED; 404 *_NOT_FOUND/NOT_FOUND; 409 RESOURCE_CONFLICT/PROTOCOL_UNAVAILABLE; 413 BODY_TOO_LARGE; 415 UNSUPPORTED_MEDIA_TYPE; 422 CONFIG_REJECTED; 429 RATE_LIMITED; 500 INTERNAL_ERROR; 502 UPSTREAM_UNAVAILABLE; 503 NOT_READY. No upstream diagnostic text."
+      content:
+        "application/json":
+          schema:
+            "$ref": "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: "object"
+      properties:
+        error:
+          type: "object"
+          properties:
+            code:
+              type: "string"
+            message:
+              type: "string"
+          required:
+            - "code"
+            - "message"
+      required:
+        - "error"
+    Mutation:
+      type: "object"
+      properties:
+        data:
+          type: "object"
+          properties:
+            ok:
+              type: "boolean"
+          required:
+            - "ok"
+      required:
+        - "data"
+    Health:
+      type: "object"
+      properties:
+        data:
+          type: "object"
+          properties:
+            status:
+              type: "string"
+              enum:
+                - "ok"
+                - "ready"
+          required:
+            - "status"
+      required:
+        - "data"
+    User:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+        username:
+          type: "string"
+        role:
+          type: "string"
+          enum:
+            - "admin"
+            - "operator"
+            - "viewer"
+      required:
+        - "id"
+        - "username"
+        - "role"
+    Auth:
+      type: "object"
+      properties:
+        data:
+          type: "object"
+          properties:
+            user:
+              "$ref": "#/components/schemas/User"
+            permissions:
+              type: "array"
+              items:
+                type: "string"
+            csrfToken:
+              type: "string"
+            expiresAt:
+              type: "string"
+              format: "date-time"
+          required:
+            - "user"
+            - "permissions"
+            - "csrfToken"
+            - "expiresAt"
+      required:
+        - "data"
+    Login:
+      type: "object"
+      properties:
+        username:
+          type: "string"
+          pattern: "^[a-zA-Z0-9_.-]{3,64}$"
+        password:
+          type: "string"
+          format: "password"
+          maxLength: 1024
+      additionalProperties: false
+      required:
+        - "username"
+        - "password"
+    Pagination:
+      type: "object"
+      properties:
+        page:
+          type: "integer"
+          minimum: 1
+        pageSize:
+          type: "integer"
+          minimum: 1
+          maximum: 200
+        total:
+          type: "integer"
+          minimum: 0
+      required:
+        - "page"
+        - "pageSize"
+        - "total"
+    Instance:
+      type: "object"
+      properties:
+        online:
+          type: "boolean"
+        version:
+          type: "string"
+        uptime:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+          description: "Seconds since the upstream started"
+      required:
+        - "online"
+        - "version"
+        - "uptime"
+    Stream:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+        online:
+          type: "boolean"
+        sourceType:
+          type: "string"
+          description: "Source kind; empty when absent"
+        tracks:
+          type: "array"
+          items:
+            type: "object"
+            properties:
+              type:
+                type: "string"
+                enum:
+                  - "video"
+                  - "audio"
+                  - "unknown"
+              codec:
+                type: "string"
+            required:
+              - "type"
+              - "codec"
+        readers:
+          type: "integer"
+          minimum: 0
+          description: "Runtime path readers including HLS muxers, not HTTP viewers"
+        configured:
+          type: "boolean"
+          description: "Has a configuration entry with this exact name"
+      required:
+        - "name"
+        - "online"
+        - "sourceType"
+        - "tracks"
+        - "readers"
+        - "configured"
+    Protocol:
+      type: "string"
+      enum:
+        - "srt"
+        - "hls"
+        - "webrtc"
+        - "rtsp"
+        - "rtsps"
+        - "rtmp"
+        - "rtmps"
+    Connection:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        protocol:
+          "$ref": "#/components/schemas/Protocol"
+        path:
+          type: "string"
+        remoteAddr:
+          type: "string"
+        createdAt:
+          type: "string"
+          format: "date-time"
+        state:
+          type: "string"
+          description: "read, publish or idle; HLS sessions are read"
+        bytesReceived:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        bytesSent:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+      required:
+        - "id"
+        - "protocol"
+        - "path"
+        - "remoteAddr"
+        - "createdAt"
+        - "state"
+        - "bytesReceived"
+        - "bytesSent"
+    PathPatch:
+      type: "object"
+      properties:
+        source:
+          type: "string"
+          maxLength: 2048
+          description: "publisher or supported rtsp/rtsps/rtmp/rtmps/http/https/srt/udp/whep/wheps URL. Admins may configure internal sources."
+        sourceOnDemand:
+          type: "boolean"
+        maxReaders:
+          type: "integer"
+          minimum: 0
+          maximum: 1000000
+        record:
+          type: "boolean"
+        recordFormat:
+          type: "string"
+          enum:
+            - "fmp4"
+            - "mpegts"
+        recordSegmentDuration:
+          type: "string"
+          description: "Positive Go duration up to 8760h, e.g. 1h"
+        recordDeleteAfter:
+          type: "string"
+          description: "Nonnegative Go duration up to 8760h; 0s disables automatic deletion"
+        overridePublisher:
+          type: "boolean"
+      additionalProperties: false
+      minProperties: 1
+    CreatePath:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 256
+        source:
+          type: "string"
+          maxLength: 2048
+          description: "publisher or supported rtsp/rtsps/rtmp/rtmps/http/https/srt/udp/whep/wheps URL. Admins may configure internal sources."
+        sourceOnDemand:
+          type: "boolean"
+        maxReaders:
+          type: "integer"
+          minimum: 0
+          maximum: 1000000
+        record:
+          type: "boolean"
+        recordFormat:
+          type: "string"
+          enum:
+            - "fmp4"
+            - "mpegts"
+        recordSegmentDuration:
+          type: "string"
+          description: "Positive Go duration up to 8760h, e.g. 1h"
+        recordDeleteAfter:
+          type: "string"
+          description: "Nonnegative Go duration up to 8760h; 0s disables automatic deletion"
+        overridePublisher:
+          type: "boolean"
+      additionalProperties: false
+      required:
+        - "name"
+    PathConfig:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+        sourceHasCredentials:
+          type: "boolean"
+          description: "Source credentials/query are redacted; omit source when retaining it"
+        source:
+          type: "string"
+        sourceOnDemand:
+          type: "boolean"
+        maxReaders:
+          type: "integer"
+        record:
+          type: "boolean"
+        recordFormat:
+          type: "string"
+        recordSegmentDuration:
+          type: "string"
+        recordDeleteAfter:
+          type: "string"
+        overridePublisher:
+          type: "boolean"
+      required:
+        - "name"
+        - "sourceHasCredentials"
+        - "source"
+        - "sourceOnDemand"
+        - "maxReaders"
+        - "record"
+        - "recordFormat"
+        - "recordSegmentDuration"
+        - "recordDeleteAfter"
+        - "overridePublisher"
+    Metrics:
+      type: "object"
+      properties:
+        inBitrate:
+          type: "number"
+          minimum: 0
+          description: "Path payload bits per second"
+        outBitrate:
+          type: "number"
+          minimum: 0
+          description: "Path payload bits per second"
+        bytesReceived:
+          type: "number"
+          minimum: 0
+          description: "Observed ingress total for this backend process, including initial counters"
+        bytesSent:
+          type: "number"
+          minimum: 0
+          description: "Observed egress total for this backend process, including initial counters"
+        readers:
+          type: "integer"
+          minimum: 0
+        sessions:
+          type: "integer"
+          minimum: 0
+        errors:
+          type: "number"
+          minimum: 0
+          description: "Observed path inbound frame errors"
+        sampledAt:
+          type: "string"
+          format: "date-time"
+          nullable: true
+        stale:
+          type: "boolean"
+        scope:
+          type: "string"
+          enum:
+            - "path-payload"
+      required:
+        - "inBitrate"
+        - "outBitrate"
+        - "bytesReceived"
+        - "bytesSent"
+        - "readers"
+        - "sessions"
+        - "errors"
+        - "sampledAt"
+        - "stale"
+        - "scope"
+    Dashboard:
+      type: "object"
+      properties:
+        instance:
+          "$ref": "#/components/schemas/Instance"
+        streams:
+          type: "object"
+          properties:
+            total:
+              type: "integer"
+              minimum: 0
+            online:
+              type: "integer"
+              minimum: 0
+          required:
+            - "total"
+            - "online"
+        connections:
+          type: "object"
+          properties:
+            publishers:
+              type: "integer"
+              minimum: 0
+            viewers:
+              type: "integer"
+              minimum: 0
+            idle:
+              type: "integer"
+              minimum: 0
+            unavailableProtocols:
+              type: "array"
+              items:
+                "$ref": "#/components/schemas/Protocol"
+          required:
+            - "publishers"
+            - "viewers"
+            - "idle"
+            - "unavailableProtocols"
+        traffic:
+          "$ref": "#/components/schemas/Metrics"
+      required:
+        - "instance"
+        - "streams"
+        - "connections"
+        - "traffic"
+    Audit:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+        user:
+          type: "string"
+        action:
+          type: "string"
+        resource:
+          type: "string"
+        time:
+          type: "string"
+          format: "date-time"
+        ip:
+          type: "string"
+          description: "Direct peer IP; forwarded headers are not trusted"
+        outcome:
+          type: "string"
+          enum:
+            - "pending"
+            - "success"
+            - "failure"
+      required:
+        - "id"
+        - "user"
+        - "action"
+        - "resource"
+        - "time"
+        - "ip"
+        - "outcome"

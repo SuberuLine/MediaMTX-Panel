@@ -1,0 +1,10 @@
+/data/
+/.cache/
+/dist/
+/.env
+/config.yaml
+*.db
+*.db-shm
+*.db-wal
+*.exe
+/coverage.out

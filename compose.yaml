@@ -1,0 +1,30 @@
+services:
+  panel:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      MTXUI_MEDIAMTX_URL: http://mediamtx:9997
+      MTXUI_MEDIAMTX_USERNAME: panel
+      MTXUI_MEDIAMTX_PASSWORD: ${MTX_API_PASSWORD:?Set MTX_API_PASSWORD}
+      MTXUI_METRICS_URL: http://mediamtx:9998/metrics
+      MTXUI_METRICS_USERNAME: panel
+      MTXUI_METRICS_PASSWORD: ${MTX_API_PASSWORD:?Set MTX_API_PASSWORD}
+      MTXUI_BOOTSTRAP_PASSWORD: ${MTXUI_BOOTSTRAP_PASSWORD:?Set MTXUI_BOOTSTRAP_PASSWORD}
+      MTXUI_SECURE_COOKIE: "false" # Loopback-only HTTP example. Use true behind HTTPS.
+    volumes:
+      - panel-data:/data
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.1
+    environment:
+      MTX_API: "yes"
+      MTX_METRICS: "yes"
+      MTX_AUTHINTERNALUSERS: '[{"user":"panel","pass":"${MTX_API_PASSWORD:?Set MTX_API_PASSWORD}","ips":[],"permissions":[{"action":"api"},{"action":"metrics"}]}]'
+    # Add protocol ports and publisher/reader users for your media deployment.
+    # API and metrics ports stay on the private Compose network.
+    restart: unless-stopped
+volumes:
+  panel-data:
