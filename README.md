@@ -1,11 +1,13 @@
-# MediaMTX Control Panel Backend
+# MediaMTX Control Panel
 
 面向 Web 管理界面的独立 Go 控制平面。提供稳定领域 API，在后端适配 MediaMTX Control API 和 Metrics；浏览器不接触上游管理端口，也不经过本服务转发媒体。
 
-当前实现文档中的 **MVP**，对接 **MediaMTX v1.21.1 / Control API v3**。旧版本的部分字段做了兼容转换，但不宣称支持所有旧版本。没有播放器或完整前端界面。
+当前实现文档中的 **MVP**，包含中文 WebUI，对接 **MediaMTX v1.21.1 / Control API v3**。旧版本的部分字段做了兼容转换，但不宣称支持所有旧版本。
 
 ## 已实现
 
+- 沿用暖白、青绿与圆角卡片风格的 WebUI：真实登录、概览、流与路径配置、连接管理、实时指标、审计日志及浏览器偏好。
+- 基于服务端 permission 的导航与操作权限、会话恢复/到期退出、CSRF 写请求、表单校验、确认对话框、空状态及故障重试。
 - Argon2id 密码、SQLite 用户、服务端 Session、HttpOnly Cookie、CSRF 和登录限流。
 - 独立的 admin / operator / viewer 权限集合，HTTP 路由按 permission 检查。
 - Instance、聚合 Dashboard、Stream 列表和详情、Path 配置 CRUD。
@@ -18,6 +20,8 @@
 
 需要 Go 1.26+，以及开启 Control API 和 Metrics 的 MediaMTX。构建不需要 C 编译器或外部数据库。Go 模块路径目前为项目占位名称，发布到自己的仓库时可统一替换。
 
+首次使用 WebUI 还需要 Node.js 24 与 pnpm 11.22.0，先执行 `pnpm --dir web install --frozen-lockfile` 和 `pnpm --dir web build`，然后设置 `MTXUI_STATIC_DIR` 为 `web/out` 的绝对路径。开发代理、前端验证与构建细节见 [web/README.md](web/README.md)。Docker 会自动构建并包含 WebUI。
+
 ```powershell
 Copy-Item config.example.yaml config.yaml
 # 仅本地 HTTP 开发关闭 Secure；生产保持 true，通过 HTTPS 反向代理访问。
@@ -28,7 +32,7 @@ $env:MTXUI_BOOTSTRAP_PASSWORD = [System.Net.NetworkCredential]::new('', $adminSe
 go run ./cmd/server -config config.yaml
 ```
 
-首次启动在空数据库中创建 `admin`。再次启动使用已有账号，不重置密码；可从运行环境移除 bootstrap 密码。默认监听 `:8080`，数据库为 `./data/app.db`。`GET /healthz` 检查本进程；`GET /readyz` 同时检查 SQLite 和 MediaMTX。
+首次启动在空数据库中创建 `admin`。再次启动使用已有账号，不重置密码；可从运行环境移除 bootstrap 密码。默认监听 `:8083`，数据库为 `./data/app.db`。`GET /healthz` 检查本进程；`GET /readyz` 同时检查 SQLite 和 MediaMTX。
 
 Linux/macOS：
 
@@ -70,7 +74,7 @@ authInternalUsers:
 
 | 环境变量 | 默认值 / 用途 |
 | --- | --- |
-| `MTXUI_LISTEN` | `:8080` |
+| `MTXUI_LISTEN` | `:8083` |
 | `MTXUI_DATABASE` | `./data/app.db` |
 | `MTXUI_MEDIAMTX_URL` | `http://127.0.0.1:9997` |
 | `MTXUI_MEDIAMTX_TIMEOUT` | `5s`，上限 `1m` |
@@ -165,11 +169,15 @@ Remove-Item Env:MTXUI_USER_PASSWORD
 
 ```sh
 cp .env.example .env
-# 编辑 .env，替换两个占位密码，然后：
+# 编辑 .env，填入已有 MediaMTX 的 API/Metrics 地址、上游账号密码和首次管理员密码，然后：
 docker compose up --build -d
 ```
 
-示例只把面板绑定到宿主机 `127.0.0.1:8080`；MediaMTX API/Metrics 不发布宿主端口。SQLite 使用命名卷。示例不开放媒体端口，也没有匿名发布/读取用户；根据实际媒体部署增加这些配置。运行镜像使用 UID/GID 10001；使用宿主 bind mount 时，需要保证数据库目录可写。
+Compose 构建和启动包含静态 WebUI 的面板，不拉取或启动 MediaMTX；请先准备已有的 MediaMTX 并启用 Control API 和 Metrics。WebUI 与面板 API 共用宿主机 `127.0.0.1:8083`，容器内监听 `:8083`。SQLite 使用命名卷。运行镜像使用 UID/GID 10001；使用宿主 bind mount 时，需要保证数据库目录可写。
+
+`.env` 中的 `MTXUI_MEDIAMTX_URL` 和 `MTXUI_METRICS_URL` 必须能从面板容器访问，用户名也可分别设置；`MTX_API_PASSWORD` 用于这两个上游接口的认证。默认地址通过 `host.docker.internal` 连接宿主机，Compose 已配置 `host-gateway` 映射。远程 MediaMTX 请改成实际可达地址；容器中的 `127.0.0.1` 指向面板容器自身。
+
+上面的 MediaMTX 配置示例适用于后端直接运行在宿主机的情况。Linux 上通过 Docker bridge 访问宿主机时，MediaMTX 的 `apiAddress` / `metricsAddress` 需要监听容器可达的宿主机私有地址，配合认证与防火墙限制访问范围。
 
 双架构镜像构建并导出本地 OCI 文件：
 
@@ -213,9 +221,9 @@ internal/audit       高风险操作审计生命周期
 internal/config      YAML 与环境配置
 migrations           嵌入二进制的 SQL 迁移
 docs/openapi.yaml    API 契约，嵌入二进制
-web                  前端接入说明
+web                  Next.js / React 中文 WebUI、测试与静态导出
 ```
 
-尚未实现：录像管理、全局/Raw 配置编辑器、用户/RBAC UI、API Token、OIDC、SSE/WebSocket、历史流量图、多实例、Prometheus exporter。没有转码、媒体代理或播放业务。
+尚未实现：录像文件管理、全局/Raw 配置编辑器、用户/RBAC 管理 UI、API Token、OIDC、SSE/WebSocket、持久化历史流量图、多实例、Prometheus exporter。实时图表只积累当前登录期间的采样。没有转码、媒体代理或播放业务。
 
 上游依据：[Control API](https://mediamtx.org/docs/references/control-api)、[Metrics](https://mediamtx.org/docs/features/metrics)、[v1.21.1 OpenAPI](https://github.com/bluenviron/mediamtx/blob/v1.21.1/api/openapi.yaml)。

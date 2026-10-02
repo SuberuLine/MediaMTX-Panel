@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -225,6 +226,29 @@ func (s *Service) Kick(ctx context.Context, p, id string) error {
 	}
 	return s.MTX.KickConnection(ctx, p, id)
 }
+
+var upstreamDays = regexp.MustCompile(`^(-?[0-9]+)d(.*)$`)
+
+// MediaMTX serializes durations using days and serializes zero as an empty
+// string. Our public write contract uses Go durations; return editable values.
+func writableDuration(value string) string {
+	if value == "" {
+		return "0s"
+	}
+	original := value
+	if match := upstreamDays.FindStringSubmatch(value); match != nil {
+		days, err := strconv.ParseInt(match[1], 10, 32)
+		if err != nil {
+			return original
+		}
+		value = strconv.FormatInt(days*24, 10) + "h" + match[2]
+	}
+	if duration, err := time.ParseDuration(value); err == nil {
+		return duration.String()
+	}
+	return original
+}
+
 func pathConfig(v mediamtx.PathConfig) PathConfig {
 	source := v.Source
 	secret := false
@@ -239,7 +263,7 @@ func pathConfig(v mediamtx.PathConfig) PathConfig {
 		u.Fragment = ""
 		source = u.String()
 	}
-	return PathConfig{Name: v.Name, Source: source, SourceHasCredentials: secret, SourceOnDemand: v.SourceOnDemand, MaxReaders: v.MaxReaders, Record: v.Record, RecordFormat: v.RecordFormat, RecordSegmentDuration: v.RecordSegmentDuration, RecordDeleteAfter: v.RecordDeleteAfter, OverridePublisher: v.OverridePublisher}
+	return PathConfig{Name: v.Name, Source: source, SourceHasCredentials: secret, SourceOnDemand: v.SourceOnDemand, MaxReaders: v.MaxReaders, Record: v.Record, RecordFormat: v.RecordFormat, RecordSegmentDuration: writableDuration(v.RecordSegmentDuration), RecordDeleteAfter: writableDuration(v.RecordDeleteAfter), OverridePublisher: v.OverridePublisher}
 }
 func (s *Service) PathConfigs(ctx context.Context) ([]PathConfig, error) {
 	v, err := s.MTX.ListPathConfigs(ctx)

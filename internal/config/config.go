@@ -41,7 +41,7 @@ type Config struct {
 
 func Load(path string) (Config, error) {
 	var c Config
-	c.Server.Listen = ":8080"
+	c.Server.Listen = ":8083"
 	c.MediaMTX.URL, c.MediaMTX.Timeout = "http://127.0.0.1:9997", 5*time.Second
 	c.Metrics.URL, c.Metrics.Interval = "http://127.0.0.1:9998/metrics", 5*time.Second
 	c.Database.Path = "./data/app.db"

@@ -293,3 +293,38 @@ func TestStaticRootAndAPIFallback(t *testing.T) {
 		}
 	}
 }
+
+func TestStaticExportPagesBesideSegmentDirectories(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"login", "dashboard/streams", "nested"} {
+		if err := os.MkdirAll(filepath.Join(dir, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, body := range map[string]string{
+		"index.html": "root", "login.html": "login page", "dashboard/streams.html": "streams page",
+		"404.html":               "not found page",
+		"login/__next._full.txt": "segment data", "nested/index.html": "directory page",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := &API{}
+	a.config.Server.StaticDir = dir
+	for route, want := range map[string]string{
+		"/login": "login page", "/login/": "login page", "/dashboard/streams": "streams page",
+		"/nested": "directory page", "/login/__next._full.txt": "segment data",
+	} {
+		w := httptest.NewRecorder()
+		a.static(w, httptest.NewRequest("GET", route, nil))
+		if w.Code != 200 || w.Body.String() != want {
+			t.Errorf("%s: status=%d body=%q want=%q", route, w.Code, w.Body.String(), want)
+		}
+	}
+	w := httptest.NewRecorder()
+	a.static(w, httptest.NewRequest("GET", "/dashboard/unknown", nil))
+	if w.Code != 404 || w.Body.String() != "not found page" {
+		t.Fatalf("unknown export route must serve the 404 page: %d %q", w.Code, w.Body.String())
+	}
+}

@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -127,6 +128,17 @@ paths: {}
 	cfg, err := client.GetPathConfig(ctx, "live/camera")
 	if err != nil || !cfg.Record || cfg.MaxReaders != 0 {
 		t.Fatalf("real patch failed: %+v %v", cfg, err)
+	}
+	configResponse := request(handler, "GET", "/api/v1/config/paths/live%2Fcamera", "", cookie, "")
+	assertStatus(t, configResponse, 200)
+	var editable struct {
+		Data service.PathConfig `json:"data"`
+	}
+	if err := json.Unmarshal(configResponse.Body.Bytes(), &editable); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ValidatePatch(service.PathPatch{RecordSegmentDuration: &editable.Data.RecordSegmentDuration, RecordDeleteAfter: &editable.Data.RecordDeleteAfter}); err != nil {
+		t.Fatal("MediaMTX day durations must be normalized for UI editing", err)
 	}
 	for _, p := range []string{"srt", "hls", "webrtc", "rtsp", "rtmp"} {
 		v, err := client.ListConnections(ctx, p)

@@ -465,18 +465,46 @@ func (a *API) static(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	missingPage := false
 	f, err := root.Open(name)
 	if errors.Is(err, os.ErrNotExist) && path.Ext(name) == "" {
-		f, err = root.Open("index.html")
+		f, err = root.Open(name + ".html")
+		if errors.Is(err, os.ErrNotExist) {
+			f, err = root.Open("404.html")
+			missingPage = err == nil
+			if errors.Is(err, os.ErrNotExist) {
+				f, err = root.Open("index.html")
+			}
+		}
 	}
 	if err != nil {
 		failure(w, 404, "NOT_FOUND", "file not found")
 		return
 	}
-	defer f.Close()
 	info, err := f.Stat()
+	if err == nil && info.IsDir() {
+		f.Close()
+		// Next exports segment data in a directory next to route.html.
+		f, err = root.Open(name + ".html")
+		if errors.Is(err, os.ErrNotExist) {
+			f, err = root.Open(path.Join(name, "index.html"))
+		}
+		if err == nil {
+			info, err = f.Stat()
+		}
+	}
 	if err != nil || info.IsDir() {
+		if f != nil {
+			f.Close()
+		}
 		failure(w, 404, "NOT_FOUND", "file not found")
+		return
+	}
+	defer f.Close()
+	if missingPage {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		io.Copy(w, f)
 		return
 	}
 	http.ServeContent(w, r, info.Name(), info.ModTime(), f)

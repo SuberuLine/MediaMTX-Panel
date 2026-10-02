@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #faf8f5;
+  font-family: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.login-input {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  background: rgb(255 255 255 / 0.8);
+  padding: 0.875rem 1rem;
+  color: #303839;
+  outline: none;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+
+.login-input::placeholder {
+  color: #b3b7bd;
+}
+
+.login-input:hover {
+  border-color: #d1d5db;
+  background: #fff;
+}
+
+.login-input:focus {
+  border-color: #4a9d9a;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgb(74 157 154 / 0.12);
+}
+
+.login-input[aria-invalid="true"] {
+  border-color: #c17767;
+  box-shadow: 0 0 0 4px rgb(193 119 103 / 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

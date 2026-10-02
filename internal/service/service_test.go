@@ -16,6 +16,18 @@ func TestSourceSecretsAreRedacted(t *testing.T) {
 	}
 }
 
+func TestUpstreamDurationsRemainEditable(t *testing.T) {
+	for input, want := range map[string]string{"1d": "24h0m0s", "2d1h30m": "49h30m0s", "": "0s", "0": "0s", "1h": "1h0m0s", "invalid": "invalid"} {
+		if got := writableDuration(input); got != want {
+			t.Errorf("%q: got %q want %q", input, got, want)
+		}
+	}
+	cfg := pathConfig(mediamtx.PathConfig{RecordSegmentDuration: "1d", RecordDeleteAfter: ""})
+	if err := ValidatePatch(PathPatch{RecordSegmentDuration: &cfg.RecordSegmentDuration, RecordDeleteAfter: &cfg.RecordDeleteAfter}); err != nil {
+		t.Fatal("normalized upstream settings must be accepted by the public write API", err)
+	}
+}
+
 func TestStreamTrackCompatibility(t *testing.T) {
 	online := false
 	p := mediamtx.Path{Name: "live", Online: &online, Ready: true, Tracks: []string{"H264", "MPEG-4 Audio", "KLV"}}
